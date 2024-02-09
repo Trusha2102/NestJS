@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpException, HttpStatus, Get, Res, UseGuards, Param, SetMetadata } from '@nestjs/common';
+import { Controller, Inject, Post, Body, HttpException, HttpStatus, Get, Res, UseGuards, Param, SetMetadata } from '@nestjs/common';
 import { Response } from 'express'; 
 import { User } from '../models/user.model';
 import { User as UserDecorator } from '../decorators/user.decorator';
@@ -8,6 +8,9 @@ import { UserService } from '../services/user.services';
 import { IsNotEmpty as IsNotEmptyValidator, IsOptional as IsOptionalValidator } from 'class-validator';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard'; 
 import { RolesGuard } from '../guards/roles.guard'; 
+import { MongoDbService } from '../services/mongo-db.service';
+import { PostgresDbService } from '../services/postgres-db.service';
+import config from '../config/database.config';
 
 export class CreateUserDto {
   @IsNotEmptyValidator()
@@ -30,7 +33,15 @@ class LoginUserDto {
 
 @Controller()
 export class AppController {
-  constructor(private readonly userService: UserService) {}
+  private dbService: MongoDbService | PostgresDbService;
+
+  constructor(
+    @Inject(config.useMongoDB ? MongoDbService : PostgresDbService)
+    private readonly injectedDbService: MongoDbService | PostgresDbService,
+    private readonly userService: UserService
+  ) {
+    this.dbService = injectedDbService;
+  }
 
   @Post('/register')
   @SetMetadata('isPublic', true) // Mark this route as public
@@ -137,37 +148,36 @@ export class AppController {
   }
 
   @Get('/assigned-user')
-@UseGuards(JwtAuthGuard, RolesGuard) // Apply JWTAuthGuard and RolesGuard for authentication and authorization
-async getAssignedUser(@UserDecorator() userData: any, @Res() res: Response): Promise<void> {
-  try {
-    if (!userData || !userData.userId) {
-      throw new HttpException('Invalid or missing token', HttpStatus.UNAUTHORIZED);
+  @UseGuards(JwtAuthGuard, RolesGuard) // Apply JWTAuthGuard and RolesGuard for authentication and authorization
+  async getAssignedUser(@UserDecorator() userData: any, @Res() res: Response): Promise<void> {
+    try {
+      if (!userData || !userData.userId) {
+        throw new HttpException('Invalid or missing token', HttpStatus.UNAUTHORIZED);
+      }
+
+      const userId = userData.userId;
+
+      // Fetch all users
+      const allUsers = await this.userService.findAll();
+
+      // Filter users based on assigned_to field
+      const assignedUsers = allUsers.filter(user => user.assigned_to === userId);
+
+      // If no assigned users found, throw 404 Not Found error
+      if (assignedUsers.length === 0) {
+        throw new HttpException('No assigned users found', HttpStatus.NOT_FOUND);
+      }
+
+      // Return assigned user details
+      res.status(HttpStatus.OK).json(assignedUsers);
+    } catch (error) {
+      const errorCode = 'UNKNOWN_ERROR';
+      const message = error.message;
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ errorCode, message });
     }
-
-    const userId = userData.userId;
-
-  // Fetch all users
-  const allUsers = await this.userService.findAll();
-
-  // Filter users based on assigned_to field
-  const assignedUsers = allUsers.filter(user => user.assigned_to === userId);
-
-    // If no assigned users found, throw 404 Not Found error
-    if (assignedUsers.length === 0) {
-      throw new HttpException('No assigned users found', HttpStatus.NOT_FOUND);
-    }
-
-    // Return assigned user details
-    res.status(HttpStatus.OK).json(assignedUsers);
-  } catch (error) {
-    const errorCode = 'UNKNOWN_ERROR';
-    const message = error.message;
-    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ errorCode, message });
   }
-}
 
-
-@Get('/user/:id')
+  @Get('/user/:id')
   async getUserById(@Param('id') id: string, @UserDecorator() userData: any, @Res() res: Response): Promise<void> {
     try {
       if (!userData || !userData.userId || userData.userId !== id) {
@@ -190,5 +200,10 @@ async getAssignedUser(@UserDecorator() userData: any, @Res() res: Response): Pro
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ errorCode, message });
     }
   }
-  
 }
+
+
+
+
+
+
