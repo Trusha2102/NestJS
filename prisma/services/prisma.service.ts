@@ -52,28 +52,28 @@ export class PrismaService {
     }
   };
 
-async createUser(createUserDto: CreateUserDto) {
+  async createUser(createUserDto: CreateUserDto) {
     try {
-        const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-        const userData: UserCreateInput = {
-            username: createUserDto.username,
-            password: hashedPassword,
-            role: createUserDto.role,
-            assigned_to: createUserDto.assigned_to,
-            id: createUserDto.id
-        };
+      const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
+      const userData: UserCreateInput = {
+        username: createUserDto.username,
+        password: hashedPassword,
+        role: createUserDto.role,
+        assigned_to: createUserDto.assigned_to,
+        id: createUserDto.id
+      };
 
-        console.log("THIS IS THE USER DATA FROM SERVICES", userData);
+      console.log("THIS IS THE USER DATA FROM SERVICES", userData);
 
-        // Create the user without the id property
-        return await this.prisma.user.create({
-            data: userData as any, 
-        });
+      // Create the user without the id property
+      return await this.prisma.user.create({
+        data: userData as any,
+      });
     } catch (error) {
-        console.error('Error during user registration:', error);
-        throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
+      console.error('Error during user registration:', error);
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
-}
+  }
 
 
   getPrisma(): PrismaClient {
