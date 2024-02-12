@@ -11,13 +11,13 @@ import * as dotenv from 'dotenv';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter'; 
 import { RoleModule } from './role.module';
 import { UserService } from './services/user.services';
+import { PrismaModule } from '../prisma/services/prisma.module'; 
 
 dotenv.config();
 
 @Module({
   imports: [
-    MongooseModule.forRoot(process.env.MONGODB_URI),
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    PrismaModule, // Use PrismaModule for database connection
     RoleModule,
     JwtModule.register({ secret: process.env.JWT_SECRET }), 
   ],
@@ -27,7 +27,6 @@ dotenv.config();
       provide: APP_FILTER,
       useClass: AllExceptionsFilter, 
     },
-    UserService,
     JwtStrategy, 
     {
       provide: APP_GUARD,

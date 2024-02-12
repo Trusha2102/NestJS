@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { PrismaModule } from '../prisma/services/prisma.module';
 import { RolesController } from './controllers/role.controller';
-import { RolesService } from './services/role.service';
-import { Role, RoleSchema } from './models/role.model';
+import { PrismaService } from '../prisma/services/prisma.service'; 
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Role.name, schema: RoleSchema }])],
+  imports: [PrismaModule], 
   controllers: [RolesController],
-  providers: [RolesService],
+  providers: [PrismaService], 
 })
 export class RoleModule {}

@@ -1,0 +1,22 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Define your models
+model User {
+  id          String  @id @map("_id")
+  username    String  @unique
+  password    String
+  role        String
+  assigned_to String?
+}
+
+model Role {
+  id   String @id @map("_id")
+  role String @unique
+}
