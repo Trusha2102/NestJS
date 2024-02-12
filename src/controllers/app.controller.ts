@@ -1,13 +1,15 @@
-import { Controller, Post, Body, HttpException, HttpStatus, Get, Res, UseGuards, Param, SetMetadata } from '@nestjs/common';
-import { Response } from 'express'; 
+import { Controller, Post, Body, HttpException, HttpStatus, Get, Res, UseGuards, Param, SetMetadata, UseInterceptors } from '@nestjs/common';
+import { Response } from 'express';
 import { User } from '../models/user.model';
 import { User as UserDecorator } from '../decorators/user.decorator';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
-import { UserService } from '../services/user.services'; 
+import { UserService } from '../services/user.services';
 import { IsNotEmpty as IsNotEmptyValidator, IsOptional as IsOptionalValidator } from 'class-validator';
-import { JwtAuthGuard } from '../guards/jwt-auth.guard'; 
-import { RolesGuard } from '../guards/roles.guard'; 
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { TransformInterceptor } from '../interceptors/transform.interceptor';
+import { ErrorsInterceptor } from '../interceptors/errors.interceptor';
 
 export class CreateUserDto {
   @IsNotEmptyValidator()
@@ -29,6 +31,7 @@ class LoginUserDto {
 }
 
 @Controller()
+@UseInterceptors(TransformInterceptor, ErrorsInterceptor)
 export class AppController {
   constructor(private readonly userService: UserService) {}
 
@@ -38,10 +41,7 @@ export class AppController {
     try {
       // Validate input
       if (!createUserDto.password) {
-        const errorCode = 'PASSWORD_NULL';
-        const message = 'Password cannot be null';
-        res.status(HttpStatus.BAD_REQUEST).json({ errorCode, message });
-        return;
+        throw new HttpException('Password cannot be null', HttpStatus.BAD_REQUEST);
       }
 
       // Hash the password
@@ -55,9 +55,7 @@ export class AppController {
 
       res.status(HttpStatus.CREATED).json(createdUser);
     } catch (error) {
-      const errorCode = 'UNKNOWN_ERROR';
-      const message = error.message;
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ errorCode, message });
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -66,13 +64,8 @@ export class AppController {
   async login(@Body() loginUserDto: LoginUserDto, @Res() res: Response): Promise<void> {
     try {
       // Check if username is missing
-      if (!loginUserDto.username) {
-        throw new HttpException('Username is required', HttpStatus.BAD_REQUEST);
-      }
-
-      // Check if password is missing
-      if (!loginUserDto.password) {
-        throw new HttpException('Password is required', HttpStatus.BAD_REQUEST);
+      if (!loginUserDto.username || !loginUserDto.password) {
+        throw new HttpException('Username and password are required', HttpStatus.BAD_REQUEST);
       }
 
       // Find user in the database
@@ -80,10 +73,7 @@ export class AppController {
 
       // If user is not found, throw 401 Unauthorized error
       if (!user) {
-        const errorCode = 'INVALID_CREDENTIALS';
-        const message = 'Invalid username or password';
-        res.status(HttpStatus.UNAUTHORIZED).json({ errorCode, message });
-        return;
+        throw new HttpException('Invalid username or password', HttpStatus.UNAUTHORIZED);
       }
 
       // Compare passwords
@@ -91,10 +81,7 @@ export class AppController {
 
       // If password is invalid, throw 401 Unauthorized error
       if (!isPasswordValid) {
-        const errorCode = 'INVALID_CREDENTIALS';
-        const message = 'Invalid username or password';
-        res.status(HttpStatus.UNAUTHORIZED).json({ errorCode, message });
-        return;
+        throw new HttpException('Invalid username or password', HttpStatus.UNAUTHORIZED);
       }
 
       // Generate JWT token
@@ -103,9 +90,7 @@ export class AppController {
       // Return token
       res.status(HttpStatus.OK).json({ token });
     } catch (error) {
-      const errorCode = 'UNKNOWN_ERROR';
-      const message = error.message;
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ errorCode, message });
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -130,44 +115,39 @@ export class AppController {
       // Return user profile
       res.status(HttpStatus.OK).json(user);
     } catch (error) {
-      const errorCode = 'UNKNOWN_ERROR';
-      const message = error.message;
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ errorCode, message });
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Get('/assigned-user')
-@UseGuards(JwtAuthGuard, RolesGuard) // Apply JWTAuthGuard and RolesGuard for authentication and authorization
-async getAssignedUser(@UserDecorator() userData: any, @Res() res: Response): Promise<void> {
-  try {
-    if (!userData || !userData.userId) {
-      throw new HttpException('Invalid or missing token', HttpStatus.UNAUTHORIZED);
+  @UseGuards(JwtAuthGuard, RolesGuard) // Apply JWTAuthGuard and RolesGuard for authentication and authorization
+  async getAssignedUser(@UserDecorator() userData: any, @Res() res: Response): Promise<void> {
+    try {
+      if (!userData || !userData.userId) {
+        throw new HttpException('Invalid or missing token', HttpStatus.UNAUTHORIZED);
+      }
+
+      const userId = userData.userId;
+
+      // Fetch all users
+      const allUsers = await this.userService.findAll();
+
+      // Filter users based on assigned_to field
+      const assignedUsers = allUsers.filter(user => user.assigned_to === userId);
+
+      // If no assigned users found, throw 404 Not Found error
+      if (assignedUsers.length === 0) {
+        throw new HttpException('No assigned users found', HttpStatus.NOT_FOUND);
+      }
+
+      // Return assigned user details
+      res.status(HttpStatus.OK).json(assignedUsers);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
-
-    const userId = userData.userId;
-
-  // Fetch all users
-  const allUsers = await this.userService.findAll();
-
-  // Filter users based on assigned_to field
-  const assignedUsers = allUsers.filter(user => user.assigned_to === userId);
-
-    // If no assigned users found, throw 404 Not Found error
-    if (assignedUsers.length === 0) {
-      throw new HttpException('No assigned users found', HttpStatus.NOT_FOUND);
-    }
-
-    // Return assigned user details
-    res.status(HttpStatus.OK).json(assignedUsers);
-  } catch (error) {
-    const errorCode = 'UNKNOWN_ERROR';
-    const message = error.message;
-    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ errorCode, message });
   }
-}
 
-
-@Get('/user/:id')
+  @Get('/user/:id')
   async getUserById(@Param('id') id: string, @UserDecorator() userData: any, @Res() res: Response): Promise<void> {
     try {
       if (!userData || !userData.userId || userData.userId !== id) {
@@ -185,10 +165,7 @@ async getAssignedUser(@UserDecorator() userData: any, @Res() res: Response): Pro
       // Return user details
       res.status(HttpStatus.OK).json(user);
     } catch (error) {
-      const errorCode = 'UNKNOWN_ERROR';
-      const message = error.message;
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ errorCode, message });
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
-  
 }
